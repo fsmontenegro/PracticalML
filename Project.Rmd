@@ -1,0 +1,207 @@
+---
+title: "Practical Machine Learning - Course Project"
+author: "Fernando Montenegro - fsmontenegro@gmail.com"
+date: "10/25/2015"
+output: html_document
+---
+
+##Executive Summary
+This paper describes the work undertaken for the Course Project for the Practical Machine Learning course as part of the Johns Hopkins/Coursera Data Science Specialization. Using a real-world training dataset (coming from PUC-RIO's HAR project), we perform the necessary data loading, data manipulation, and prediction exercises with the data, attempting to create a reasonable model for predicting a factor variable (quality of exercise form) from a number of inputs associated with motion sensors attached to human subjects during exercise.
+After initial data preparation and manipulation, two prediction exercises were done: prediction based on Classification Trees and prediction based on Random Forest. The outcome of these exercises were evaluated against the training set using cross-validation (k-fold) and, in the end, the approach using Random Forest produced a significantly better result than Classification Trees.
+The final model was then used to predict against the real-world testing dataset provided.
+
+##Introduction
+This report describes a practical exercise with machine learning given a real-world dataset coming from research associated with the "Quantified Self" movement. The original research was performed by the Informatics Department at PUC-RIO. 
+
+The background for the research is that a number of human subjects performed weightlifting exercises while wearing a number of sensors to track movement. The objective of the research project was to predict how well a particular exercise would be performed, given the multitude of sensor inputs. The possible outcomes were:
+
+* Class A: correct, done according to the specification
+* Class B: incorrect: elbows thrown to the front
+* Class C: incorrect: dumbbell lifted only halfway
+* Class D: incorrect: dumbbell lowered only halfway
+* Class E: incorrect: hips thrown to the front.
+
+More details, including the full academic paper, are available at [http://groupware.les.inf.puc-rio.br/har]. The exact reference for this research is:
+
+> Ugulino, W.; Cardador, D.; Vega, K.; Velloso, E.; Milidiu, R.; Fuks, H. Wearable Computing: Accelerometers' Data Classification of Body Postures and Movements. Proceedings of 21st Brazilian Symposium on Artificial Intelligence. Advances in Artificial Intelligence - SBIA 2012. In: Lecture Notes in Computer Science. , pp. 52-61. Curitiba, PR: Springer Berlin / Heidelberg, 2012. ISBN 978-3-642-34458-9. DOI: 10.1007/978-3-642-34459-6_6.
+
+This report describes the data manipulation and application of machine learning concepts used to perform prediction on a test set.
+
+As an aribtrary starting point, we chose to pursue an approach that would yield better than 95% accuracy against its test sets.
+
+##Libraries, Data Loading and Manipulation
+A number of libraries were used. In some cases, we chose to suppress messages to avoid cluttering in this report.
+```{r libraries}
+library(ggplot2) ; library(lattice) ; library(caret) ; suppressMessages(library(rattle))
+library(rpart) ; library(rpart.plot) ; library (scales) ; suppressMessages(library (randomForest))
+```
+
+Data is downloaded from the course pages, if needed.
+```{r dataload}
+training_url <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testing_url <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+# download training dataset if it doesn't exist locally 
+if(!file.exists("./pml-training.csv")) {
+  download.file(training_url,destfile = "./pml-training.csv", method = "curl")
+}
+
+# download testing dataset if it doesn't exist locally 
+if(!file.exists("./pml-testing.csv")) {
+  download.file(testing_url,destfile = "./pml-testing.csv", method = "curl")
+}
+
+# load training set, with early coding of errors as NA
+full_train <- read.csv("pml-training.csv", na.strings = c("NA", "#DIV/0!", ""))
+```
+
+###Remove NA's and Additional Columns
+The main steps in cleaning up this particular dataset were to:
+
+1) remove NA, empty, and erroneous values (originally coded as '#DIV/0!')
+2) remove columns that were not measurements that could contribute to the target. These were found in columns 1-7 of the dataset: details about the subject, timestamp, and data collection.
+3) remove co-variates: identify and remove columns that have co-variates that will not contribute to prediction.
+
+
+```{r dataprep}
+# Eliminate Columns with any NAs
+t1 <- full_train[, colSums(is.na(full_train)) == 0]
+
+# Check columns
+names(t1)[1:7]
+
+# Remove unneeded columns
+t1 <- t1[, -c(1:7)]
+
+# Remove Co-variate columns, if any
+cov_cols <- nearZeroVar(t1)
+
+if (length(cov_cols)>0) {
+  filtered_train <- t1[,-cov_cols]
+} else {
+  filtered_train <- t1
+}
+
+# Filtered Training set
+dim(filtered_train)
+```
+
+The resulting dataset has 53 variables, including the target 'classe' factor.
+
+###Data Splitting
+
+The next steps were to perform Data Splitting on the training set, in order to support cross-validation of the predictions prior to full evaluation against the final test set. We chose to use a 60%/40% split.
+
+```{r datasplit}
+
+# Set random seed to support reproducibility
+set.seed(42)
+
+# Split the training set with a 60/40 train/test split
+index_train <- createDataPartition(filtered_train$classe, p = 0.6, list = FALSE)
+split_train <- filtered_train[index_train, ]
+split_test <- filtered_train[-index_train, ]
+dim(split_train)
+dim(split_test)
+```
+
+##Cross-Validation
+The method chosen for cross-validation was k-fold, using k=5. This offers a good balance between performance, bias, and variance.
+
+```{r crossval}
+# Create cross-validation control
+cv_control <- trainControl(method = "cv", number = 5)
+```
+
+##Prediction Approach 1 - Classification Tree
+
+The initial approach to prediction was to use a Classification Tree.
+
+```{r rpart}
+
+# Model Fit using CART
+load(file="model-rpart")
+# modelfit_rpart <- train(classe ~ ., data = split_train, method = "rpart", trControl = cv_control)
+
+# Output in Numeric and Graphical form
+print(modelfit_rpart, digits = 4)
+fancyRpartPlot(modelfit_rpart$finalModel,main="Classification Tree for HAR training dataset",sub="")
+
+# Perform prediction against the test portion of the training data
+prediction_rpart <- predict(modelfit_rpart,split_test)
+
+# Evaluate prediction against known classification
+confusion_rpart <- confusionMatrix(split_test$classe,prediction_rpart)
+confusion_rpart
+
+# Obtain accuracy (used for estimating out of sample errors)
+accuracy_rpart <- confusion_rpart$overall[[1]]
+```
+
+The overall accuracy for the Classification Tree approach was just `r percent(accuracy_rpart)`, meaning that the Out of Sample error expected for this approach is `r percent(1-accuracy_rpart)`.
+
+Based on this result, which falls well below the original 95% accuracy goal, the conclusion is that the Classification Tree approach is *not* suitable, and a different method should be sought.
+
+
+##Prediction Approach 2 - Random Forest
+
+The Random Forest method fits a number of decision trees using subsamples of the dataset and then applies an averaging function to control for over-fitting and improve accuracy. Note that Random Forest does cross-validation internally, so there's no need to specify the specific cross-validation parameters.
+
+```{r rf}
+
+# Model Fit using Random Forest
+load("model-rf")  
+#modelfit_rf <- train(classe ~ ., data = split_train, method = "rf")
+
+# Output in Numeric form
+print(modelfit_rf, digits = 4)
+
+# Perform prediction against the test portion of the training data
+prediction_rf <- predict(modelfit_rf,split_test)
+
+# Evaluate prediction against known classification
+confusion_rf <- confusionMatrix(split_test$classe,prediction_rf)
+confusion_rf
+
+# Obtain accuracy (used for estimating out of sample errors)
+accuracy_rf <- confusion_rf$overall[[1]]
+```
+
+The accuracy for Random Forest was *significantly* better at `r percent(accuracy_rf)`, leading to an Out of Sample error of just `r percent(1-accuracy_rf)`.
+
+Based on this approach, we choose to use the Random Forest model to predict against the test data set.
+
+
+##Prediction on Test Data
+
+Given the Random Forest model chosen, we then loaded the 'official' test data and performed predictions against it.
+
+```{r prediction}
+# load testing set, with early coding of errors as NA
+final_test <- read.csv("pml-testing.csv", na.strings = c("NA", "#DIV/0!", ""))
+
+# Perform prediction against the Random Forest model
+final_prediction <- predict(modelfit_rf,final_test)
+
+# Final prediction
+final_prediction
+```
+
+Please note: while not displayed in this report, the submission above scored 20/20 on the Course Project Submission page. Please contact the author if you require additional information/confirmation.
+
+-------------
+
+##Appendix - Coursera Submission Code
+The course project also required that the prediction be submitted for evaluation. The code below created the separate submission files required for that. Please refer to the Course Project instructions for more details.
+```{r eval=FALSE}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+pml_write_files(final_prediction)
+```
+
+
