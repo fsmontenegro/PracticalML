@@ -117,11 +117,14 @@ cv_control <- trainControl(method = "cv", number = 5)
 
 The initial approach to prediction was to use a Classification Tree.
 
+> NOTE: While performing this investigation, I used R's 'save' and 'load' functions to save/load the results of the time-consuming model fit training operations. If necessary for full reproducibility, please comment out the "load" function and uncomment the "train" and optionally the "save" functions below.
+
 ```{r rpart}
 
 # Model Fit using CART
 load(file="model-rpart")
 # modelfit_rpart <- train(classe ~ ., data = split_train, method = "rpart", trControl = cv_control)
+# save(modelfit_rpart,file = "model-rpart")
 
 # Output in Numeric and Graphical form
 print(modelfit_rpart, digits = 4)
@@ -147,11 +150,14 @@ Based on this result, which falls well below the original 95% accuracy goal, the
 
 The Random Forest method fits a number of decision trees using subsamples of the dataset and then applies an averaging function to control for over-fitting and improve accuracy. Note that Random Forest does cross-validation internally, so there's no need to specify the specific cross-validation parameters.
 
+> NOTE: While performing this investigation, I used R's 'save' and 'load' functions to save/load the results of the time-consuming model fit training operations. If necessary for full reproducibility, please comment out the "load" function and uncomment the "train" and optionally the "save" functions below.
+
 ```{r rf}
 
 # Model Fit using Random Forest
 load("model-rf")  
 #modelfit_rf <- train(classe ~ ., data = split_train, method = "rf")
+#save(modelfit_rf,file = "model-rf")
 
 # Output in Numeric form
 print(modelfit_rf, digits = 4)
